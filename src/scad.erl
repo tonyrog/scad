@@ -13,7 +13,6 @@
 -export([remove_comments/1]).
 -export([read_file/1]).
 
-
 parse_file(File) ->
     case read_file(File) of
 	{ok,Binary} ->

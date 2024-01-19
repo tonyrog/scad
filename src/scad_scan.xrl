@@ -32,7 +32,8 @@ undef             : {token,{undef,TokenLine}}.
 use[\s\t\r\n]*\<[^\t\r\n>]+\> : {token,{use,TokenLine,TokenChars}}.
 
 "(\^.|\.|[^\"])*" : S = lists:sublist(TokenChars,2,TokenLen-2),
-                   {token,{string, TokenLine, S}}.
+                    Str = unicode:characters_to_binary(S, utf8),
+                   {token,{string, TokenLine, Str}}.
 [\xc2\xa0]+     : {error,TokenLine}.
 {UNICODE}+      : {error,TokenLine}.
 

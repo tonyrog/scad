@@ -2,23 +2,14 @@
 %% ANSI C parser 
 %%
 Nonterminals
-   %% expr
    expr call logic_or logic_and equality comparison addition multiplication
    exponent unary primary list_comprehension_elements
    list_comprehension_elements_p vector_element expr_or_empty
-   %% vec
-   vector_elements
-   %% inst
-   module_instantiation single_module_instantiation
-   %% ifelse 
+   vector_elements module_instantiation
    if_statement ifelse_statement
-   %% args 
    arguments argument_list parameters parameter_list
-   %% arg
    argument parameter
-   %% text
    module_id
-   %% 
    input statement assignment inner_input child_statements 
    child_statement optional_trailing_comma
   .
@@ -50,24 +41,23 @@ statement -> module_instantiation : '$1'.
 inner_input -> '$empty' : [].
 inner_input -> inner_input statement : '$1' ++ ['$2'].
 
-assignment -> id '=' expr ';' : {assignment, id('$1'), '$3'}.
+assignment -> id '=' expr ';' : {assign, line('$1'), id('$1'), '$3'}.
 
-module_instantiation -> '!' module_instantiation : {tag_root, '$2'}.
-module_instantiation -> '#' module_instantiation : {tag_highlight, '$2'}.
-module_instantiation -> '%' module_instantiation : {tag_background, '$2'}.
-module_instantiation -> '*' module_instantiation : {delete, '$2'}.
-module_instantiation -> single_module_instantiation child_statement : 
-			    case '$2' of
-				empty -> '$1';
-				Child -> {apply,line('$1'),'$1',Child}
-			    end.
+module_instantiation -> '!' module_instantiation : tag(root,'$2').
+module_instantiation -> '#' module_instantiation : tag(highlight,'$2').
+module_instantiation -> '%' module_instantiation : tag(background,'$2').
+module_instantiation -> '*' module_instantiation : tag(delete, '$2').
+module_instantiation -> module_id '(' arguments ')' child_statement :
+			    {mcall,line('$1'),[],'$1','$3','$5'}.
 module_instantiation -> ifelse_statement : '$1'.
     
-ifelse_statement -> if_statement : {'if', '$1'}.
+ifelse_statement -> if_statement : '$1'.
 ifelse_statement -> if_statement 'else' child_statement : 
-			{_, Cond, Then} = '$1', {'if', Cond, Then, '$3'}.
+			{'if', Line, Cond, Then} = '$1', 
+		    {'if', Line, Cond, Then, '$3'}.
 
-if_statement -> 'if' '(' expr ')' child_statement : {'if', '$3', '$5' }.
+if_statement -> 'if' '(' expr ')' child_statement : 
+		    {'if',line('$1'), '$3', '$5' }.
 
      
 child_statements -> '$empty' : [].
@@ -85,12 +75,9 @@ module_id -> 'assert' : id('$1').
 module_id -> 'echo' : id('$1').
 module_id -> 'each' : id('$1').
 
-single_module_instantiation -> module_id '(' arguments ')' :
-				   {apply,line('$1'),'$1','$3'}.
-    
 expr -> logic_or : '$1'.
 expr -> 'function' '(' parameters ')' expr : 
-	    {anonfunc,line('$1'), '$3', '$5'}.
+	    {function,line('$1'),'$3','$5'}.
 expr -> logic_or '?' expr ':' expr : {op,line('$2'),'?','$1','$3','$5'}.
 expr -> 'let' '(' arguments ')' expr : {'let',line('$1'),'$3','$5'}.
 expr -> 'assert' '(' arguments ')' expr_or_empty :
@@ -152,11 +139,11 @@ primary -> 'false' : '$1'.
 primary -> 'undef' : '$1'.
 primary -> number  : {number,line('$1'),to_number('$1')}.
 primary -> string  : {string,line('$1'),value('$1')}.
-primary -> id      : {var,line('$1'), value('$1')}.
+primary -> id      : {id,line('$1'), value('$1')}.
 primary -> '(' expr ')' : '$2'.
 primary -> '[' expr ':' expr ']' : {range,line('$1'),'$2','$4'}.
 primary -> '[' expr ':' expr ':' expr ']' : {range,line('$1'),'$2','$4','$6'}.
-primary -> '[' ']' : {vector, line('$1'), []}.
+primary -> '[' ']' : {vector,line('$1'),[]}.
 primary -> '[' vector_elements optional_trailing_comma ']' : 
 	       {vector,line('$1'),'$2'}.
 
@@ -228,10 +215,14 @@ line({_,Line,_,_}) when is_integer(Line) -> Line;
 line({_,Line,_,_,_}) when is_integer(Line) -> Line;
 line({_,Line,_,_,_,_}) when is_integer(Line) -> Line.
 
-
-
 value({_,_Line}) -> undefined;
 value({_,_Line,Value}) -> Value.
+
+tag(Tag,{mcall,Line,Tags,Module,Args,Stmts}) ->
+    {mcall,Line,[Tag|Tags],Module,Args,Stmts};
+tag(_Tag,Stmt) ->
+    Stmt.
+    
 
 to_number({number,_Line,Value}) ->
     try list_to_integer(Value) of
