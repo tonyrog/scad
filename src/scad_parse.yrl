@@ -159,7 +159,7 @@ list_comprehension_elements ->
     'for' '(' arguments ')' vector_element : {lc_for,line('$1'),'$3','$5'}.
 list_comprehension_elements -> 
     'for' '(' arguments ';' expr ';' arguments ')' vector_element :
-	{lc_forc,line('$1'),'$3','$5','$7'}.
+	{lc_forc,line('$1'),'$3','$5','$7','$9'}.
 list_comprehension_elements -> 
     'if' '(' expr ')' vector_element :
 	{lc_if,line('$1'),'$3','$5'}.
@@ -190,7 +190,7 @@ parameter_list -> parameter : ['$1'].
 parameter_list -> parameter_list ',' parameter : '$1' ++ ['$3'].
 
 parameter -> id : '$1'.
-parameter -> id '=' expr : {'=','$1','$3'}.
+parameter -> id '=' expr : {'=',line('$1'),'$1','$3'}.
 
 arguments -> '$empty' : [].
 arguments -> argument_list optional_trailing_comma : '$1'.
@@ -199,7 +199,7 @@ argument_list -> argument : ['$1'].
 argument_list -> argument_list ',' argument : '$1'++['$3'].
 
 argument -> expr : '$1'.
-argument -> id '=' expr : {'=','$1','$3'}.
+argument -> id '=' expr : {'=',line('$1'),'$1','$3'}.
 
 
 Erlang code.
