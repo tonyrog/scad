@@ -16,7 +16,7 @@ Nonterminals
 
 Terminals
    module function if else for let assert echo each
-   id string use number true false undef '<=' '>=' '==' '!=' '||' '&&'
+   id string use include number true false undef '<=' '>=' '==' '!=' '||' '&&'
    '=' ';' '!' '#' '%' '*' '(' ')' '{' '}' '?' ':' '>' '<' '+' '-'
    '/' '^' '[' ']' '.' ',' .
 
@@ -25,7 +25,8 @@ Rootsymbol input.
 %%
 
 input -> '$empty' : [].
-input -> input use : '$1' ++ [{use,'$2'}].
+input -> input use : '$1' ++ ['$2'].
+input -> input include : '$1' ++ ['$2'].
 input -> input statement : '$1'++['$2'].
 
 statement -> ';' : empty.

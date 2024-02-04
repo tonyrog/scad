@@ -29,8 +29,14 @@ each              : {token,{each,TokenLine}}.
 true              : {token,{true,TokenLine}}.
 false             : {token,{false,TokenLine}}.
 undef             : {token,{undef,TokenLine}}.
-use[\s\t\r\n]*\<[^\t\r\n>]+\> : {token,{use,TokenLine,TokenChars}}.
-
+use[\s\t\r\n]*\<[^\t\r\n>]+\> : 
+                     [_,A] = string:split(TokenChars, "<"),
+                     [B,_] = string:split(A, ">"),
+                     {token,{use,TokenLine,B}}.
+include[\s\t\r\n]*\<[^\t\r\n>]+\> : 
+                     [_,A] = string:split(TokenChars, "<"),
+                     [B,_] = string:split(A, ">"),
+                     {token,{include,TokenLine,B}}.
 "(\^.|\.|[^\"])*" : S = lists:sublist(TokenChars,2,TokenLen-2),
                     Str = unicode:characters_to_binary(S, utf8),
                    {token,{string, TokenLine, Str}}.
