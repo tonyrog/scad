@@ -76,6 +76,7 @@ include[\s\t\r\n]*\<[^\t\r\n>]+\> :
 >		: {token,{'>',TokenLine}}.
 \^		: {token,{'^',TokenLine}}.
 \?		: {token,{'?',TokenLine}}.
+\#		: {token,{'#',TokenLine}}.
 {WS}+            : skip_token.
 
 

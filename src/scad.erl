@@ -13,13 +13,14 @@
 -export([remove_comments/1]).
 -export([read_file/1]).
 
+-define(log(F,A), ok).
+
 parse_file(File) ->
     case read_file(File) of
 	{ok,Binary} ->
 	    parse_file_data(File,Binary);
-	Error={error,Reason} ->
-	    io:format("Unable to read file ~s (~w)\n",
-		      [File, Reason]),
+	Error={error,_Reason} ->
+	    ?log("Unable to read file ~s (~p)\n",[File,_Reason]),
 	    Error
     end.
 

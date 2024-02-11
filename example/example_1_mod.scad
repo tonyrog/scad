@@ -1,5 +1,7 @@
+da = 5;
+wa = 7;
 
-module mycube(side=10, height=0, width=0, depth=0) {
+module mycube(side=10, height=0, width=da+wa+1, depth=da+1) {
     h = height ? height : side;
     w = width ? width : side;
     d = depth ? depth : side;

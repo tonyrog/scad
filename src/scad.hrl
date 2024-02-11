@@ -9,13 +9,22 @@
 -type color() :: [color_component()].
 -type param() :: {Key::atom(), Value::term()}.
 -define(DEFAULT_COLOR, (<<"Gold">>)).
+-define(BLACK,  [0.0, 0.0, 0.0]).
+-define(BLUE,   [0.0, 0.0, 1.0]).
+-define(GREEN,  [0.0, 1.0, 0.0]).
+-define(CYAN,   [0.0, 1.0, 1.0]).
+-define(RED,    [1.0, 0.0, 0.0]).
+-define(MAGENTA,[1.0, 0.0, 1.0]).
+-define(YELLOW, [1.0, 1.0, 0.0]).
+-define(WHITE,  [1.0, 1.0, 1.0]).
+-define(GOLD, [255/255,215/255,0/255]).
 
 -record(object,
 	{
-	 type = undefined :: none | cube | sphere | cylinder |
-			     union | difference | intersection |
-			     rotate | scale | translate | 
-			     color,
+	 type = none :: none | cube | sphere | cylinder |
+			union | difference | intersection |
+			rotate | scale | translate | 
+			color,
 	 params = [] :: [param()],
 	 children = [] :: [#object{}]
 	}).

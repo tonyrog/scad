@@ -20,22 +20,50 @@
 	 reminder/2, dot_/2, norm/1, cross/2,
 	 lookup/2, matmul_/2, transpose/1]).
 
--export([mod_union/3, mod_difference/3, mod_intersection/3]).
--export([mod_echo/3, mod_children/3]).
--export([mod_translate/3, mod_rotate/3, mod_scale/3]).
--export([mod_color/3]).
--export([mod_cylinder/3, mod_sphere/3, mod_cube/3]).
+-export([bim_union/3, bim_difference/3, bim_intersection/3]).
+-export([bim_echo/3, bim_children/3]).
+-export([bim_translate/3, bim_rotate/3, bim_scale/3]).
+-export([bim_color/3]).
+-export([bim_cylinder/3, bim_sphere/3, bim_cube/3]).
 	 
--export([cos/1, sin/1, tan/1, acos/1, asin/1, atan/1, atan2/1]).
+-export([bif_cos/1, bif_sin/1, bif_tan/1, bif_acos/1, bif_asin/1, 
+	 bif_atan/1, bif_atan2/1]).
 
+-export([bif_abs/1]).
+-export([bif_ceil/1]).
+-export([bif_concat/1]).
+-export([bif_cross/1]).
+-export([bif_exp/1]).
+-export([bif_floor/1]).
+-export([bif_ln/1]).
+-export([bif_len/1]).
+-export([bif_log/1]).
+-export([bif_lookup/1]).
+-export([bif_max/1]).
+-export([bif_min/1]).
+-export([bif_norm/1]).
+-export([bif_pow/1]).
+-export([bif_rands/1]).
+-export([bif_round/1]).
+-export([bif_sign/1]).
+-export([bif_sqrt/1]).
+-export([bif_parent_module/2]). %% yes +scope!
+-export([bif_str/1]).
+-export([bif_chr/1]).
+-export([bif_ord/1]).
+-export([bif_is_string/1]).
+-export([bif_is_list/1]).
+-export([bif_is_num/1]).
+-export([bif_is_bool/1]).
+-export([bif_is_undef/1]).
+-export([bif_is_function/1]).
 
 -include("scad.hrl").
-
 
 %% -define(OUTPUT_PREFIX, "// ").
 -define(OUTPUT_PREFIX, "").
 
-%% -define(dbg(F,A), io:format(F,A)).
+%%-define(dbg(F,A), io:format(F,A)).
 -define(dbg(F,A), ok).
 
 
@@ -66,6 +94,7 @@ stmt_list_([{file,Filename}|Stmts], Scope, Acc) ->
     stmt_list_(Stmts, Scope#{filename=>Filename}, Acc);
 stmt_list_([Stmt|Stmts], Scope, Acc) ->
     {Obj,Scope1} = stmt(Stmt, Scope),
+    ?dbg("eval: stmt:~p, obj=~p\n", [Stmt,Obj]),
     stmt_list_(Stmts, Scope1, prepend(Obj, Acc));
 stmt_list_([], Scope, Acc) ->
     {Acc, Scope}.
@@ -168,24 +197,31 @@ for([], Smts, Scope) ->
     stmt(Smts, Scope).
 
 expr(Expr, Scope) ->
-    try expr_(Expr, Scope) of
-	Value -> Value
-    catch
-	error:_:_Stack ->
-	    ?dbg("eval_expr: failed ~p\~p\n", [Expr,_Stack]),
-	    undef
-    end.
+    expr_(Expr, Scope).
+%%    try expr_(Expr, Scope) of
+%%	Value ->
+%%	    Value
+%%    catch
+%%	error:Reason:_Stack ->
+%%	    ?dbg("eval:expr: failed ~p ~p\n~p\n", [Expr,Reason,_Stack]),
+%%	    error(_Stack)
+%%    end.
 
-expr_({vector,Elems}, Scope) ->
+expr_(Expr,Scope) ->
+    Value = expr__(Expr,Scope),
+    ?dbg("eval:expr_: ~p => ~p\n", [Expr,Value]),
+    Value.
+
+expr__({vector,Elems}, Scope) ->
     vector(Elems, Scope);
-expr_({var,Var}, Scope) ->
+expr__({var,Var}, Scope) ->
      maps:get(Var, Scope, undef);
-expr_({range,{Start,Inc,End}}, Scope) ->
+expr__({range,{Start,Inc,End}}, Scope) ->
     S = expr_(Start, Scope),
     I = expr_(Inc, Scope),
     E = expr_(End, Scope),
     {range, {S, I, E}};
-expr_(#func{use=Bind,params=Params,expr=Expr}, Scope) ->
+expr__(#func{use=Bind,params=Params,expr=Expr}, Scope) ->
     Bound = get_vars(Bind, Scope),
     %% FIXME handle named parameters
     fun(Vs,FScope) ->
@@ -193,28 +229,28 @@ expr_(#func{use=Bind,params=Params,expr=Expr}, Scope) ->
 	    FScope2 = bind(Params, Vs, FScope1),
 	    expr(Expr, FScope2)
     end;
-expr_({'echo',Args,Expr}, Scope) ->
+expr__({'echo',Args,Expr}, Scope) ->
     As = [expr_(A, Scope) || A <- Args],
     echo(As),
     expr_(Expr, Scope);
-expr_({'assert',Line,Args,Expr}, Scope) ->
+expr__({'assert',Line,Args,Expr}, Scope) ->
     As = [expr(A, Scope) || A <- Args],
     assert(As,Args,Line,Scope),
     expr(Expr, Scope);
-expr_({'let',Args,Expr}, Scope) ->
+expr__({'let',Args,Expr}, Scope) ->
     Scope1 = let_args(Args, Scope),
     expr_(Expr, Scope1);
-expr_({op,call,Call,Args},Scope) ->
+expr__({op,call,Call,Args},Scope) ->
     case call(Call, Scope) of
 	{Params,Map,Fun} when is_function(Fun) ->
 	    Args1 = args(Args, Scope),
 	    Args2 = args_to_vec(Args1, Map, params_to_tuple(Params, Args1)),
 	    Fun(Args2,Scope);
 	true ->
-	    ?dbg("~p is not a function~n", [Call1]),
+	    ?dbg("~p is not a function~n", [Call]),
 	    undef
     end;
-expr_({op,Op,Arg1},Scope) -> 
+expr__({op,Op,Arg1},Scope) -> 
     A1 = expr_(Arg1, Scope),
     case Op of
 	'+' -> A1;
@@ -222,7 +258,7 @@ expr_({op,Op,Arg1},Scope) ->
 	'!' -> not bool(A1);
 	_ -> undef
     end;
-expr_({op,Op,Arg1,Arg2},Scope) ->
+expr__({op,Op,Arg1,Arg2},Scope) ->
     A1 = expr_(Arg1, Scope),
     A2 = expr_(Arg2, Scope),
     case Op of
@@ -240,17 +276,17 @@ expr_({op,Op,Arg1,Arg2},Scope) ->
 	'&&' -> bool(A1) andalso bool(A2);
 	'||' -> bool(A1) orelse bool(A2);
 	'^' -> math:pow(A1,A2);
-	index -> index(A2, A1);
+	index -> index(A1,A2);
 	_ -> undef
     end;
-expr_({op,'?',Cond,Then,Else},Scope) ->
+expr__({op,'?',Cond,Then,Else},Scope) ->
     C = expr_(Cond,Scope),
     case bool(C) of
 	true -> expr_(Then, Scope);
 	false -> expr_(Else, Scope)
     end;
 %% number/string/boolan/undef/empty
-expr_(Constant, _Scope) -> Constant.
+expr__(Constant, _Scope) -> Constant.
 
 
 call(#func{use=Bind,params=Params,map=Map,expr=Expr}, Scope) ->
@@ -258,17 +294,26 @@ call(#func{use=Bind,params=Params,map=Map,expr=Expr}, Scope) ->
     {Params,Map,
      fun(Args,FScope) ->
 	     FScope1 = set(Bound, FScope),
-	     if is_function(Expr) ->
+	     if  is_function(Expr, 1) ->
+		     %% io:format("call: ~p(~p)\n", [Expr, Args]),
+		     Expr(Args);
+		 is_function(Expr, 2) ->
 		     Expr(Args, FScope1);
-		true ->
+		 true ->
 		     FScope2 = bind0(Params, Args, FScope1),
 		     expr(Expr, FScope2)
 	     end
      end};
 call({var,Var}, Scope) ->
     case maps:get(Var, Scope, undef) of
-	undef -> %% not anonomous function
-	    undef;
+	undef -> 
+	    case get_function(Var, Scope) of
+		undefined -> 
+		    ?dbg("~p is not a function\n", [Var]),
+		    undef;
+		Func=#func{} -> 
+		    call(Func, Scope)
+	    end;
 	#func{name=anonymous,use=Bind,params=Params,map=Map,expr=Expr} ->
 	    Bound = get_vars(Bind, Scope),
 	    {Params,Map,
@@ -278,7 +323,7 @@ call({var,Var}, Scope) ->
 		     expr(Expr, FScope2)
 	     end};
 	_ ->
-	    io:format("not a function ~p~n", [Var]),
+	    ?dbg("not a function ~p~n", [Var]),
 	    undef
     end;
 call(Expr, Scope) ->
@@ -286,7 +331,7 @@ call(Expr, Scope) ->
 	Func={_Parms,_Map,Fun} when is_function(Fun) ->
 	    Func;
 	_Value ->
-	    io:format("not a function ~p~n", [_Value]),
+	    ?dbg("not a function ~p~n", [_Value]),
 	    undef
     end.
 
@@ -451,7 +496,6 @@ bind0([Var|Ps], [Val|Vs], Scope) when is_list(Var) ->
 bind0([], _, Scope) ->
     Scope.
 
-
 %% set a variable to a value in a scope
 set(Name, Value, Scope) ->
     Scope#{ Name => Value }.
@@ -538,16 +582,14 @@ color(Props) ->
 	    B8 = list_to_integer([B1,B2], 16),
 	    A8 = list_to_integer([A1,A2], 16),
 	    make_color([R8/255,G8/255,B8/255,A8/255], A0);
-	ColorName when is_binary(ColorName) ->
-	    {R,G,B} = epx_color:from_name(binary_to_list(ColorName)),
-	    make_color([R/255,G/255,B/255], A0)
+	ColorName when is_binary(ColorName); is_atom(ColorName) ->
+	    {R,G,B} = scad_color:from_name(ColorName),
+	    make_color([R,G,B], A0)
     end.
 
-make_color([R,G,B], undef) -> [R,G,B,1.0];
-make_color([R,G,B], A)     -> [R,G,B,A];
-make_color(Color=[_R,_G,_B,_A], undef) -> Color;
-make_color([R,G,B,_], A)     -> [R,G,B,A].
-
+make_color(Color, undef) -> Color;
+make_color([R,G,B], A)   -> [R,G,B,A];
+make_color([R,G,B,_], A) -> [R,G,B,A].
 
 sequence(Start, Stop, Step) when is_number(Start), is_number(Stop), 
 				 is_number(Step),
@@ -595,7 +637,7 @@ arg_list(Rest, [], _Scope) ->
     [{rest,Rest}].
 -endif.
 
-index([Ind], Vec) when is_integer(Ind), is_list(Vec) ->
+index(Vec,Ind) when is_list(Vec), is_integer(Ind) ->
     lists:nth(Ind+1, Vec).
 
 -spec rad2deg(number()) -> number().
@@ -760,81 +802,122 @@ builtin_functions() ->
     #{
       "version" => #func{name="version", expr=[2024,1,24]},
       "version_num" => #func{name="version_num",expr=20240124},
-      ?BIFx("cos", fun scad_eval:cos/1),
-      ?BIFx("sin", fun scad_eval:sin/1),
-      ?BIFx("tan", fun scad_eval:tan/1),
-      ?BIFx("acos", fun scad_eval:acos/1),
-      ?BIFx("asin", fun scad_eval:acsin/1),
-      ?BIFx("atan", fun scad_eval:atan/1),
-      ?BIF("atan2", ["y","x"], #{ "y"=>1, "x"=>2}, fun scal_eval:atan/2),
-      ?BIFx("abs", fun([X]) -> abs(X) end),
-      ?BIFx("ceil", fun([X]) -> trunc(math:ceil(X)) end),
-      ?BIF("concat",?vararg, fun(X) -> lists:flatten(X) end),
+      ?BIFx("cos", fun scad_eval:bif_cos/1),
+      ?BIFx("sin", fun scad_eval:bif_sin/1),
+      ?BIFx("tan", fun scad_eval:bif_tan/1),
+      ?BIFx("acos", fun scad_eval:bif_acos/1),
+      ?BIFx("asin", fun scad_eval:bif_asin/1),
+      ?BIFx("atan", fun scad_eval:bif_atan/1),
+      ?BIF("atan2", ["y","x"], #{ "y"=>1, "x"=>2}, fun scal_eval:bif_atan/2),
+      ?BIFx("abs", fun scad_eval:bif_abs/1),
+      ?BIFx("ceil", fun scad_eval:bif_ceil/1),
+      ?BIF("concat",?vararg, fun scad_eval:bif_concat/1),
       ?BIF("cross",["a","b"],#{"a"=>1,"b"=>2},
-	   fun([A,B]) -> scad_eval:cross(A,B) end),
-      ?BIFx("exp", fun([X]) -> math:exp(X) end),
-      ?BIFx("floor", fun([X]) -> trunc(math:floor(X)) end),
-      ?BIFx("ln", fun([X]) -> math:log(X) end),
-      ?BIFx("len", fun([X]) when is_binary(X) -> byte_size(X); %%fixme
-		      ([X]) when is_list(X) -> length(X)
-		   end),
-      ?BIFx("log", fun([X]) -> math:log10(X) end),
-      ?BIF("lookup",["k","kv"], #{"k"=>1, "kv"=>2},
-	   fun([K,KV]) -> scad_eval:lookup(K,KV) end),
-      ?BIF("max",?vararg, fun([V]) when is_list(V) -> lists:max(V);
-			     ([X,Y]) when is_number(X), is_number(Y) -> max(X,Y);
-			     (Xs) -> lists:max(Xs)
-			  end),
-      ?BIF("min",?vararg, fun([V]) when is_list(V) -> lists:min(V);
-			     ([X,Y]) when is_number(X), is_number(Y) -> min(X,Y);
-			     (Xs) -> lists:min(Xs)
-			  end),
-      ?BIF("norm",["v"],#{ "v"=>1},fun([V]) -> scad_eval:norm(V) end),
-      ?BIF("pow",["x","y"],#{ "x"=>1, "y"=>2},
-	   fun([X,Y]) -> math:pow(X,Y) end),
+	   fun scad_eval:bif_cross/1),
+      ?BIFx("exp", fun scad_eval:bif_exp/1),
+      ?BIFx("floor", fun scad_eval:bif_floor/1),
+      ?BIFx("ln", fun scad_eval:bif_ln/1),
+      ?BIFx("len", fun scad_eval:bif_len/1),
+      ?BIFx("log", fun scad_eval:bif_log/1),
+      ?BIF("lookup",["k","kv"], #{"k"=>1, "kv"=>2},fun scad_eval:bif_lookup/1),
+      ?BIF("max",?vararg, fun scad_eval:bif_max/1),
+      ?BIF("min",?vararg, fun scad_eval:bif_min/1),
+      ?BIF("norm",["v"],#{ "v"=>1}, fun scad_eval:bif_norm/1),
+      ?BIF("pow",["x","y"],#{ "x"=>1, "y"=>2},fun scad_eval:bif_pow/1),
       ?BIF("rands",["min_value","max_value",{"value_count",1},
 		    {"seed_value",undef}],
 	   #{"min_value"=>1,"max_value"=>2, "value_count"=>3, "seed_value"=>4},
-	   fun([A,B,N,undef]) when is_number(A), is_number(B), A =< B,
-				   is_integer(N), N >= 0 ->
-		   D = B-A,
-		   [A+D*rand:uniform() || _ <- lists:seq(1,N)];
-	      ([A,B,N,Seed]) when is_number(A), is_number(B), A =< B,
-				  is_integer(N), N >= 0, 
-				  is_integer(Seed) ->
-		   rand:seed(exsss,Seed),
-		   D = B-A,
-		   [A+D*rand:uniform() || _ <- lists:seq(1,N)]
-	   end),
-      ?BIFx("round", fun([X]) -> round(X) end),
-      ?BIFx("sign", fun([X]) when X > 0 -> 1;
-			    ([X]) when X < 0 -> -1;
-			    ([_]) -> 0
-			 end),
-      ?BIFx("sqrt", fun([X]) -> math:sqrt(X) end),
+	   fun scad_eval:bif_rands/1),
+      ?BIFx("round", fun scad_eval:bif_round/1),
+      ?BIFx("sign",  fun scad_eval:bif_sign/1),
+      ?BIFx("sqrt",  fun scad_eval:bif_sqrt/1),
       ?BIF("parent_module",["n"], #{ "n"=>1 },
-	   fun([N],Scope) ->
-		   Ps = maps:get(parent_modules,Scope,[]),
-		   lists:nth(N+1, Ps)
-	   end),
-      ?BIFx("str", fun([X]) -> io_lib:format("~p", [X]) end),
-      ?BIFx("chr", fun([X]) -> [X] end),
-      ?BIFx("ord", fun([X]) -> hd(X) end),
-      ?BIFx("is_string", fun([X]) -> is_binary(X) end),
-      ?BIFx("is_list", fun([X]) -> is_list(X) end),
-      ?BIFx("is_num",  fun([X]) -> is_number(X) end),
-      ?BIFx("is_bool", fun([X]) -> is_boolean(X) end),
-      ?BIFx("is_undef", fun([X]) -> X == undef end),
-      ?BIFx("is_function", fun([X]) -> is_function(X) end)
+	   fun scad_eval:bif_parent_module/2),
+      ?BIFx("str", fun scad_eval:bif_str/1),
+      ?BIFx("chr", fun scad_eval:bif_chr/1),
+      ?BIFx("ord", fun scad_eval:bif_ord/1),
+      ?BIFx("is_string", fun scad_eval:bif_is_string/1),
+      ?BIFx("is_list", fun scad_eval:bif_is_list/1),
+      ?BIFx("is_num",  fun scad_eval:bif_is_num/1),
+      ?BIFx("is_bool", fun scad_eval:bif_is_bool/1),
+      ?BIFx("is_undef", fun scad_eval:bif_is_undef/1),
+      ?BIFx("is_function", fun scad_eval:bif_is_function/1)
      }.
 
-cos([X]) -> math:cos(deg2rad(X)).
-sin([X]) -> math:sin(deg2rad(X)).
-tan([X]) -> math:tan(deg2rad(X)).
-acos([X]) -> rad2deg(math:acos(X)).
-asin([X]) -> rad2deg(math:asin(X)).
-atan([X]) -> rad2deg(math:atan(X)).
-atan2([Y,X]) -> rad2deg(math:atan2(Y,X)).
+%% built in functions (must be exported)
+bif_abs([X]) -> abs(X).
+
+bif_ceil([X]) -> trunc(math:ceil(X)).
+bif_concat(X) -> lists:flatten(X).
+bif_cross([A,B]) -> cross(A,B).
+bif_exp([X]) -> math:exp(X).
+bif_floor([X]) -> trunc(math:floor(X)).
+bif_ln([X]) -> math:log(X).
+bif_len([X]) ->
+    if is_binary(X) -> byte_size(X); %%fixme
+       is_list(X) -> length(X)
+    end.
+bif_log([X]) -> math:log10(X).
+bif_lookup([K,KV]) -> lookup(K,KV).
+bif_max(Xs) ->
+    case Xs of
+	[V] when is_list(V) -> lists:max(V);
+	[X,Y] when is_number(X), is_number(Y) -> max(X,Y);
+	_ -> lists:max(Xs)
+    end.
+bif_min(Xs) ->
+    case Xs of
+	[V] when is_list(V) -> lists:min(V);
+	[X,Y] when is_number(X), is_number(Y) -> min(X,Y);
+	_ -> lists:min(Xs)
+    end.
+bif_norm([V]) -> norm(V).
+bif_pow([X,Y]) -> math:pow(X,Y).
+bif_rands(Xs) ->
+    case Xs of
+	[A,B,N,undef] when is_number(A), is_number(B), A =< B,
+			   is_integer(N), N >= 0 ->
+	    D = B-A,
+	    [A+D*rand:uniform() || _ <- lists:seq(1,N)];
+	[A,B,N,Seed] when is_number(A), is_number(B), A =< B,
+			  is_integer(N), N >= 0, 
+			  is_integer(Seed) ->
+	    rand:seed(exsss,Seed),
+	    D = B-A,
+	    [A+D*rand:uniform() || _ <- lists:seq(1,N)]
+    end.
+bif_round([X]) -> round(X).
+bif_sign([X]) ->
+    if X > 0 -> 1;
+       X < 0 -> -1;
+       true -> 0
+    end.
+bif_sqrt([X]) -> math:sqrt(X).
+
+bif_parent_module([N],Scope) ->
+    Ps = maps:get(parent_modules,Scope,[]),
+    lists:nth(N+1, Ps).
+
+bif_cos([X]) -> math:cos(deg2rad(X)).
+bif_sin([X]) -> math:sin(deg2rad(X)).
+bif_tan([X]) -> math:tan(deg2rad(X)).
+bif_acos([X]) -> rad2deg(math:acos(X)).
+bif_asin([X]) -> rad2deg(math:asin(X)).
+bif_atan([X]) -> rad2deg(math:atan(X)).
+bif_atan2([Y,X]) -> rad2deg(math:atan2(Y,X)).
+
+%% FIXME str/chr/ord need better treatment
+bif_str([X]) -> io_lib:format("~p", [X]).
+bif_chr([X]) -> [X].
+bif_ord([X]) -> hd(X).
+
+bif_is_string([X]) -> is_binary(X).
+bif_is_list([X]) -> is_list(X).
+bif_is_num([X]) -> is_number(X).
+bif_is_bool([X]) -> is_boolean(X).
+bif_is_undef([X]) -> X == undef.
+bif_is_function([X]) -> is_function(X).
+
 
 norm([]) -> 0;
 norm(As) when is_list(As), is_number(hd(As))  ->
@@ -853,30 +936,30 @@ builtin_modules() ->
       %% 3D objects
       ?BIM("cylinder",
 	   ["h","r","r1","r2","center","d","d1","d2"],
-	   %% "$fa","$fs","$fn"
+	   %% dyn = "$fa","$fs","$fn"
 	   #{"h"=>1,"r"=>2,"r1"=>3,"r2"=>4,"center"=>5,"d"=>6,"d1"=>7,"d2"=>8},
-	   fun scad_eval:mod_cylinder/3),
+	   fun scad_eval:bim_cylinder/3),
       ?BIM("sphere",["r","d"],
-	   %% "$fa", "$fs", "$fn"],
+	   %% dyn = "$fa", "$fs", "$fn"],
 	   #{"r"=>1,"d"=>2},
-	   fun scad_eval:mod_sphere/3),
+	   fun scad_eval:bim_sphere/3),
       ?BIM("cube",["size", "center"],
 	   #{"size"=>1, "center"=>2},
-	   fun scad_eval:mod_cube/3),
+	   fun scad_eval:bim_cube/3),
       %% Color
-      ?BIM("color",["c", "alpha"], fun scad_eval:mod_color/3),
+      ?BIM("color",["c", "alpha"], fun scad_eval:bim_color/3),
       %% Transformations
-      ?BIM("translate",["v"], #{ "v" => 1 }, fun scad_eval:mod_translate/3),
-      ?BIM("rotate",["a","v"], #{ "a" => 1, "v" => 2 }, fun scad_eval:mod_rotate/3),
-      ?BIM("scale",["v"], #{ "v" => 1 }, fun scad_eval:mod_scale/3),
+      ?BIM("translate",["v"], #{ "v" => 1 }, fun scad_eval:bim_translate/3),
+      ?BIM("rotate",["a","v"], #{ "a" => 1, "v" => 2 }, fun scad_eval:bim_rotate/3),
+      ?BIM("scale",["v"], #{ "v" => 1 }, fun scad_eval:bim_scale/3),
       %% Operations
-      ?BIM("assert",?vararg, fun scad_eval:mod_assert/3),
-      ?BIM("echo",?vararg, fun scad_eval:mod_echo/3),
+      ?BIM("assert",?vararg, fun scad_eval:bim_assert/3),
+      ?BIM("echo",?vararg, fun scad_eval:bim_echo/3),
 
-      ?BIM("children", ?vararg, fun scad_eval:mod_children/3),
-      ?BIM("intersection",[], fun scad_eval:mod_intersection/3),
-      ?BIM("union",[], fun scad_eval:mod_union/3),
-      ?BIM("difference",[], fun scad_eval:mod_difference/3)
+      ?BIM("children", ?vararg, fun scad_eval:bim_children/3),
+      ?BIM("intersection",[], fun scad_eval:bim_intersection/3),
+      ?BIM("union",[], fun scad_eval:bim_union/3),
+      ?BIM("difference",[], fun scad_eval:bim_difference/3)
       %% ADD more operations/objects and transformations
      }.
 
@@ -884,28 +967,29 @@ builtin_modules() ->
 %% built in modules - move to various files?
 %%
 
-mod_union([], Child, Scope) ->
+bim_union([], Child, Scope) ->
     Children = child(Child, Scope),
     #object{type=union, children=Children}.
     
 
-mod_difference([], Child, Scope) ->
+bim_difference([], Child, Scope) ->
     Children = child(Child, Scope),
     #object {type=difference, children=Children}.
 
-mod_intersection([], Child, Scope) ->
+bim_intersection([], Child, Scope) ->
     Children = child(Child, Scope),
     #object {type=intersection, children=Children}.
 
-mod_echo(Args, _Child, Scope) ->
+%% FIXME: display floats/strings native/better
+bim_echo(Args, _Child, Scope) ->
     As = args(Args, Scope),
     ?dbg("echo: args = ~p\n", [As]),
     echo(As),
     true.
 
-mod_children([], _Child, Scope) ->
+bim_children([], _Child, Scope) ->
     maps:get(children, Scope);  %% flatten? filter true?
-mod_children([A], _Child, Scope) ->
+bim_children([A], _Child, Scope) ->
     Cs = maps:get(children, Scope),
     case expr(A, Scope) of
 	I when is_integer(I) ->
@@ -918,25 +1002,25 @@ mod_children([A], _Child, Scope) ->
 	      end, List)
     end.
 
-mod_translate([V], Child, Scope) ->
+bim_translate([V], Child, Scope) ->
     Children = child(Child, Scope),
     #object { type=translate, params=[{v,V}], children=Children}.
 
-mod_scale([V], Child, Scope) ->
+bim_scale([V], Child, Scope) ->
     Children = child(Child, Scope),
     #object { type=scale, params=[{v,V}],children=Children}.
 
-mod_rotate([A,V], Child, Scope) ->
-    AA = if A =:= undef -> 0; true -> A end,
+bim_rotate([A,V], Child, Scope) ->
     Children = child(Child, Scope),
-    #object{type=rotate,params=[{a,AA},{v,V}],children=Children}.
+    #object{type=rotate,params=[{a,A},{v,V}],children=Children}.
 
-mod_color([C,Alpha], Child, Scope) ->
+bim_color([C,Alpha], Child, Scope) ->
     Children = child(Child, Scope),
     #object {type=color,params=[{c,C},{alpha,Alpha}],children=Children}.
 
-mod_cylinder([H,R,R1,R2,Center,D,D1,D2|_], _Child, _Scope) ->
-    %% "$fa","$fs","$fn"],
+bim_cylinder([H,R,R1,R2,Center,D,D1,D2|Dyn], Child, Scope) ->
+    Children = child(Child, Scope),
+    DParams = get_dyn([{"$fa",'$fa'},{"$fs",'$fs'},{"$fn",'$fn'}], Dyn),
     HH = if H =:= undef -> 1; true -> H end,
     RR1 = if D1 == undef, D /= undef -> D/2;
 	     D1 == undef -> if R1 == undef -> R; true -> R1 end;
@@ -948,21 +1032,27 @@ mod_cylinder([H,R,R1,R2,Center,D,D1,D2|_], _Child, _Scope) ->
 	  end,
     Center1 = if Center =:= undef -> false; true -> Center end,
     #object{type=cylinder,
-	    params=[{h,HH},{r1,RR1},{r2,RR2},{center,Center1}]}.
+	    params=[{h,HH},{r1,RR1},{r2,RR2},{center,Center1}|DParams],
+	    children=Children
+	   }.
 
-mod_sphere([R,D|_], _Child, _Scope) ->
-    %% "$fa", "$fs", "$fn"],
+bim_sphere([R,D|Dyn], Child, Scope) ->
+    Children = child(Child, Scope),
+    DParams = get_dyn([{"$fa",'$fa'},{"$fs",'$fs'},{"$fn",'$fn'}], Dyn),
     R1 = if D == undef ->
 		 if R == undef -> 1; true -> R end;
 	    true ->
 		D/2
 	 end,
-    #object{type=sphere,params=[{r,R1}]}.
+    #object{type=sphere,params=[{r,R1}|DParams],children=Children}.
 
-mod_cube([Size,Center], _Child, _Scope) ->
+
+bim_cube([Size,Center], Child, Scope) ->
+    Children = child(Child, Scope),
     Size1 = if Size =:= undef -> [1,1,1]; true -> Size end,
     Center1 = if Center =:= undef -> false; true -> Center end,
-    #object{type=cube, params=[{size,Size1},{center,Center1}]}.
+    #object{type=cube, params=[{size,Size1},{center,Center1}], 
+	    children=Children}.
 
 
 child(empty, _Scope) -> [];
@@ -975,3 +1065,11 @@ child(Stmt, Scope) ->
 	{true,_} -> [];
 	{Obj,_} -> [Obj]
     end.
+
+get_dyn([{Name,Key}|DVars], Dyn) ->
+    case proplists:get_value(Name, Dyn) of
+	undefined -> get_dyn(DVars, Dyn);
+	Val -> [{Key,Val} | get_dyn(DVars, Dyn)]
+    end;
+get_dyn([], _Dyn) ->
+    [].

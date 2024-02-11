@@ -14,8 +14,8 @@
 
 -define(is_value(X), (not is_tuple((X)))).
 
--define(dbg(F,A), io:format(F,A)).
-%%-define(dbg(F,A), ok).
+%%-define(dbg(F,A), io:format(F,A)).
+-define(dbg(F,A), ok).
 
 %% -define(is_value(X), 
 %%	(is_boolean(X)
@@ -55,7 +55,7 @@ lint(Stmts, Opts) when is_list(Stmts), is_list(Opts) ->
     stmt_list(Stmt1, #{}).
 
 input([{include,_Line,Filename}|Stmts],Acc,Fs) ->
-    case scad:parse_file(Filename) of
+    case input_file(Filename, Fs) of
 	{ok, Stmts1} ->
 	    Stmts2 = [{file,Filename}|Stmts1]++[eof|Stmts],
 	    input(Stmts2,Acc,Fs);
@@ -65,7 +65,7 @@ input([{include,_Line,Filename}|Stmts],Acc,Fs) ->
 	    input(Stmts,Acc,Fs)
     end;
 input([{use,_Line,Filename}|Stmts],Acc,Fs) ->
-    case scad:parse_file(Filename) of
+    case input_file(Filename, Fs) of
 	{ok, Stmts1} ->
 	    Stmts2 = filter_use(Stmts1),
 	    Stmts3 = [{file,Filename}|Stmts2]++[eof|Stmts],
@@ -83,6 +83,21 @@ input([eof|Stmts],Acc,[_|Fs1=[Filename|_Fs]]) ->
     input(Stmts,[{file,Filename}|Acc],Fs1);
 input([Stmt|Stmts],Acc,Fs) ->
     input(Stmts,[Stmt|Acc],Fs).
+
+input_file(Filename, Fs) ->
+    case scad:parse_file(Filename) of
+	{error, enoent} ->
+	    case Fs of
+		[ParentFilename|_] ->
+		    Dir = filename:dirname(ParentFilename),
+		    Filename1 = filename:join(Dir, Filename),
+		    scad:parse_file(Filename1);
+		[] ->
+		    {error, enoent}
+	    end;
+	Other -> Other
+    end.
+
 %%input([], Acc,_Fs) ->
 %%    lists:reverse(Acc).
 
@@ -160,8 +175,12 @@ stmt(Stmt,Use,Set,Bound,St) ->
 	    ?dbg("params: ps=~p\n", [sets:to_list(Ps)]),
 	    ?dbg("params: use=~p\n", [sets:to_list(Use1)]),
 	    %% Bound1 = unbind_params(Params1, Bound),
+	    Mod1 = #mod{name=Name,use=use_list(Use1),params=Params1,
+			map=Map,stmt=empty},
+	    %% prepare for recursive calls
+	    NBound1 = set_module(Name, Mod1, Bound1),
 	    ?dbg("Stmt1=~p\n", [Stmt1]),
-	    {Stmt2,Use2,Set2,_Bound2} = stmt(Stmt1,Use1,sets:new(),Bound1,St),
+	    {Stmt2,Use2,Set2,_Bound2} = stmt(Stmt1,Use1,sets:new(),NBound1,St),
 	    ?dbg("stmt: use=~p\n", [sets:to_list(Use2)]),
 	    ?dbg("stmt: set=~p\n", [sets:to_list(Set2)]),
 	    Scope = sets:subtract(sets:subtract(Use2, Ps), Set2),
@@ -172,10 +191,15 @@ stmt(Stmt,Use,Set,Bound,St) ->
 	{function,_Line,{id,_,Name},Params,Expr} ->
 	    {Params1,Ps,Use1,Bound1,Map} = params(Params, Bound),
 	    %% Bound1 = unbind_params(Params1, Bound),
-	    {Expr1,Use2} = expr(Expr,Use1,Bound1),
+	    Func1 = #func{name=Name,use=use_list(Use1),params=Params1,
+			  map=Map,expr=undef},
+	    %% prepare for recursive calls
+	    NBound1 = set_function(Name, Func1, Bound1),
+	    {Expr1,Use2} = expr(Expr,Use1,NBound1),
 	    Scope = sets:subtract(Use2, Ps),  %% scope varaibles
 	    Func = #func{name=Name,use=use_list(Scope),params=Params1,
 			 map=Map,expr=Expr1},
+	    %% set the finalized version
 	    NBound = set_function(Name, Func, Bound),
 	    {Func,sets:union(Use, Scope),Set,NBound};
 	%% FIXME move all mcalls efter lookup!!! below
@@ -214,36 +238,37 @@ stmt(Stmt,Use,Set,Bound,St) ->
 	    %% FIXME: recursive calls (and forward calls)
 	    case get_module(ID, Bound) of
 		undefined ->
+		    %% FIXME: report error and insert a dummy and continue
 		    ?dbg("~s:~w unbound module ~p~n", 
 			 [maps:get(filename,St), _Line, ID]),
 		    {empty,Use,Set,Bound};
 		#mod{params=Params,map=Map,stmt=_} ->
 		    {Args1, Use1} = arg_list(Args,Use,Bound),
 		    ?dbg("lint: mcall: id=~s args=~p, params=~p, map=~p, use=~p\n", 
-			      [ID, Args1, Params, Map, sets:to_list(Use)]),
-		    Args2 = if Params == ?vararg ->
-				    Args1;
-			       true ->
-				    ArgsTuple = params_to_tuple(Params, Args1),
-				    ?dbg("ArgsTuple=~p\n", [ArgsTuple]),
-				    args_to_vec(Args1, Map, ArgsTuple)
-			    end,
-		    ?dbg("Args2 = ~p\n", [Args2]),
+			 [ID, Args1, Params, Map, sets:to_list(Use)]),
+		    {Args2,Dyn} = if Params == ?vararg ->
+					  {Args1,[]};
+				     true ->
+					  ArgsTuple = params_to_tuple(Params, Args1),
+					  ?dbg("ArgsTuple=~p\n", [ArgsTuple]),
+					  args_to_vec(Args1, Map, ArgsTuple)
+				  end,
+		    ?dbg("Args2=~p, Dyn=~p\n", [Args2,Dyn]),
 		    {ChildStmt1,_Use2,_Set2,_Bound} = 
 			stmt(ChildStmt,Use1,sets:new(),Bound,St),
 		    %% Bind Sets2 ?
-		    Mcall = {mcall,ID,Tags,Args2,ChildStmt1},
+		    Mcall = {mcall,ID,Tags,Args2++Dyn,ChildStmt1},
 		    {Mcall,Use,Set,Bound}
 	    end;
 	{'if', _Line, Cond, Then, Else} ->
-	    {Cond1,Use1} = expr(Cond,Bound,Use),
+	    {Cond1,Use1} = expr(Cond,Use,Bound),
 	    {Then1,Use2,Set2,Bound1} = stmt(Then,Use1,Set,Bound,St),
 	    {Else1,Use3,Set3,Bound2} = stmt(Else,Use2,Set2,Bound,St),
 	    IF = {'if',Cond1,Then1,Else1},
 	    Bound3 = maps:merge(Bound1, Bound2),
 	    {IF, Use3, Set3,Bound3};
 	{'if', _Line, Cond, Then} ->
-	    {Cond1,Use1} = expr(Cond,Bound,Use),
+	    {Cond1,Use1} = expr(Cond,Use,Bound),
 	    {Then1,Use2,Set2,Bound2} = stmt(Then,Use1,Set,Bound,St),
 	    IF = {'if',Cond1,Then1},
 	    {IF, Use2, Set2, Bound2}
@@ -341,17 +366,17 @@ expr_({'let',_Ln,Args,Expr},Use,Bound) ->
 expr_({op,_Ln,call,Call,Args},Use,Bound) -> 
     {Call1,Use1} = call(Call,Use,Bound),
     {Args1, Use2} = arg_list(Args,Use1,Bound),
-    Args2 = case Call1 of
-		#func{name=_Name,params=?vararg,map=_Map} ->
-		    Args1;
-		#func{name=_Name,params=Params,map=Map} ->
-		    ArgsTuple = params_to_tuple(Params, Args1),
-		    ?dbg("ArgsTuple=~p\n", [ArgsTuple]),
-		    args_to_vec(Args1, Map, ArgsTuple);
-		_ ->
-		    Args1
-	    end,
-    ?dbg("Args2 = ~p\n", [Args2]),
+    {Args2,Dyn} = case Call1 of
+		      #func{name=_Name,params=?vararg,map=_Map} ->
+			  {Args1,[]};
+		      #func{name=_Name,params=Params,map=Map} ->
+			  ArgsTuple = params_to_tuple(Params, Args1),
+			  ?dbg("ArgsTuple=~p\n", [ArgsTuple]),
+			  args_to_vec(Args1, Map, ArgsTuple);
+		      _ ->
+			  {Args1,[]}
+		  end,
+    ?dbg("Args2=~p, Dyn=~p\n", [Args2,Dyn]),
     %% partial eval if possible (builtin functions)
     try case {Call1,Args2} of
 	    {#func{expr=Expr},[X]} when is_function(Expr,1) ->
@@ -363,10 +388,10 @@ expr_({op,_Ln,call,Call,Args},Use,Bound) ->
     catch
 	error:_ ->
 	    case Call1 of
-		#func{} ->
-		    {{op,call,Call1,Args2},Use2};
-		_ ->
-		    {{op,call,Call1,Args1},Use2}
+		#func{name=anonymous} ->
+		    {{op,call,Call,Args2++Dyn},Use2};
+		#func{name=Name} ->
+		    {{op,call,{var,Name},Args2++Dyn},Use2}
 	    end
     end;
 expr_({op,_Ln,Op,Arg1},Use,Bound) -> 
@@ -386,17 +411,27 @@ expr_({op,_Ln,Op,Arg1},Use,Bound) ->
 expr_({op,_Ln,member,Arg1,{id,_,ID}},Use,Bound) ->
     {A1,Use1} = expr_(Arg1,Use,Bound),
     Ind = case ID of
-	      "x" -> [0];
-	      "y" -> [1];
-	      "z" -> [2];
+	      "x" -> 0;
+	      "y" -> 1;
+	      "z" -> 2;
 	      _ -> undef
 	  end,
-    try index(Ind, A1) of
+    try index(A1, Ind) of
 	Value ->
 	    {Value,Use1}
     catch
 	error:_ ->
 	    {{op,index,A1,Ind},Use1}
+    end;
+expr_({op,_Ln,index,Arg1,[Arg2]},Use,Bound) ->
+    {A1,Use1} = expr_(Arg1,Use,Bound),
+    {A2,Use2} = expr_(Arg2,Use1,Bound),
+    try index(A1, A2) of
+	Value ->
+	    {Value,Use2}
+    catch
+	error:_ ->
+	    {{op,index,A1,A2},Use2}
     end;
 expr_({op,_Ln,Op,Arg1,Arg2},Use,Bound) ->
     {A1,Use1} = expr_(Arg1,Use,Bound),
@@ -415,8 +450,7 @@ expr_({op,_Ln,Op,Arg1,Arg2},Use,Bound) ->
 	    '<='  when ?is_value(A1), ?is_value(A2) -> scad_eval:lte(A1,A2);
 	    '&&' -> scad_eval:bool(A1) andalso scad_eval:bool(A2);
 	    '||' -> scad_eval:bool(A1) orelse scad_eval:bool(A2);
-	    '^' -> math:pow(A1,A2);
-	    index -> index(A2, A1)
+	    '^' -> math:pow(A1,A2)
 	end of
 	A3 ->
 	    {A3,Use2}
@@ -547,14 +581,19 @@ params_to_tuple_([], Acc) ->
     list_to_tuple(lists:reverse(Acc)).
 
 args_to_vec(Args, Map, Tuple) ->
-    args_to_vec(Args, 1, Map, Tuple).
-args_to_vec([{'=',Var,Expr}|Args], I, Map, Tuple) when ?is_var(Var) ->
-    J = maps:get(Var, Map),
-    args_to_vec(Args, I, Map, setelement(J, Tuple, Expr));
-args_to_vec([Expr|Args], I, Map, Tuple) ->
-    args_to_vec(Args, I+1, Map, setelement(I, Tuple, Expr));
-args_to_vec([], _I, _Map, Tuple) ->
-    tuple_to_list(Tuple).
+    args_to_vec_(Args, 1, Map, Tuple, []).
+
+args_to_vec_([{'=',Var,Expr}|Args], I, Map, Tuple, Dyn) when ?is_var(Var) ->
+    case maps:get(Var, Map, undefined) of
+	undefined -> 
+	    args_to_vec_(Args, I, Map, Tuple, [{Var,Expr}|Dyn]);
+	J  ->
+	    args_to_vec_(Args, I, Map, setelement(J, Tuple, Expr), Dyn)
+    end;
+args_to_vec_([Expr|Args], I, Map, Tuple, Dyn) ->
+    args_to_vec_(Args, I+1, Map, setelement(I, Tuple, Expr), Dyn);
+args_to_vec_([], _I, _Map, Tuple, Dyn) ->
+    {tuple_to_list(Tuple), Dyn}.
 
 arg_list(Args,Use,Bound) ->
     arg_list(Args,Use,Bound,[]).
@@ -581,9 +620,11 @@ args([{'=', ID,_Expr} | Args]) -> [ID | args(Args)];
 args([ID|Args]) -> [ID | args(Args)];
 args([]) -> [].
 
-index([Ind], Vec) when is_integer(Ind), is_list(Vec) ->
-    lists:nth(Ind+1, Vec).
-
+index(Vec,Ind) when is_list(Vec), is_integer(Ind) ->
+    lists:nth(Ind+1, Vec);
+index(Vec,Ind) ->
+    {op,index,Vec,Ind}.
+    
 get_function(Name, Bound) ->
     Funcs = maps:get(functions, Bound),
     maps:get(Name, Funcs, undefined).

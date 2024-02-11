@@ -116,16 +116,16 @@ unary -> exponent : '$1'.
 unary -> '+' unary : 
 	     case '$2' of
 		 {number,_Line,_Value} -> '$2';
-		 _ -> {op,line('$1'),'+','$1'}
+		 _ -> {op,line('$1'),'+','$2'}
 	     end.
 unary -> '-' unary :
 	     case '$2' of
 		 {number,Line,Value} -> 
 		     {number,Line,-Value};
 		 _ ->
-		     {op,line('$1'),'-','$1'}
+		     {op,line('$1'),'-','$2'}
 	     end.
-unary -> '!' unary : {op,line('$1'),'!','$1'}.
+unary -> '!' unary : {op,line('$1'),'!','$2'}.
 
 exponent -> call : '$1'.
 exponent -> call '^' unary : {op,line('$2'),'^','$1','$3'}.

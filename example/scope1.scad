@@ -1,4 +1,5 @@
 // openscad --export-format echo -o - scope1.scad
+c = 17;
 
 module foo()
 {
@@ -28,7 +29,7 @@ module baz()
     }
     a = 1;    
     b = a + 1;
-    c = 2;
+    // c = 2;
     a = 3;
     echo ("bar:",a=a, b=b, c=c);
     m1();
