@@ -435,7 +435,6 @@ r_color_(Params, Objs, _Scope) ->
 	    end,
     w_color(Color, Objs).
 
-
 r_cube(Params, Children, Scope) ->
     {ID,_Vs} = r_cube_(Params, children(Children,Scope), Scope),
     ID.
@@ -487,9 +486,10 @@ r_cylinder_(Params, _Objs, Scope) ->
 		     false -> [RR,RR,H/2];
 		     true -> [0.0,0.0,0.0]
 		 end,
-    Fa = proplists:get_value('$fa', Params, maps:get('$fa',Scope,12)),
-    Fn = proplists:get_value('$fn', Params, maps:get('$fn',Scope,0)),
-    Fs = proplists:get_value('$fs', Params, maps:get('$fs',Scope,2)),
+    ScopeParams = maps:get(params,Scope,#{}),
+    Fn = proplists:get_value('$fn', Params, maps:get('$fn',ScopeParams,0)),
+    Fa = proplists:get_value('$fa', Params, maps:get('$fa',ScopeParams,6)),    %% 12
+    Fs = proplists:get_value('$fs', Params, maps:get('$fs',ScopeParams,0.5)),  %% 2
     Ns = fragments(RR, Fn, Fs, Fa),
     Thickness = 1, %% scad parameter? (cylinder_type = tube|gear)
     OptList = [{cylinder_type,cylinder}, 
@@ -524,10 +524,11 @@ r_sphere_(Params, _Objs, Scope) ->
     %%
     %% Ns = number of sections
     %% Nl = number of slices
-    %% default parameters should be sent in a envirnment
-    Fn = proplists:get_value('$fn', Params, maps:get('$fn',Scope,0)),
-    Fa = proplists:get_value('$fa', Params, maps:get('$fa',Scope,6)), %% 12),
-    Fs = proplists:get_value('$fs', Params, maps:get('$fs',Scope,0.5)), %%2),
+    %% default parameters should be sent in a environment
+    ScopeParams = maps:get(params,Scope,#{}),
+    Fn = proplists:get_value('$fn', Params, maps:get('$fn',ScopeParams,0)),
+    Fa = proplists:get_value('$fa', Params, maps:get('$fa',ScopeParams,6)), %% 12),
+    Fs = proplists:get_value('$fs', Params, maps:get('$fs',ScopeParams,0.5)), %%2),
     Ns = fragments(R, Fn, Fs, Fa),
     Nl = max(Ns div 2, 3),
     Xr = R,
@@ -702,7 +703,7 @@ command_({call,{cube,[Ctm,Color,Arg]},From}, St) ->
 	    We = build(Fs, Vs, Ctm, Color),
 	    St1 = wings_obj:new(Name, We, St),
 	    {ID,_} = get_latest_id_(St1),
-	    reply(From, {ID,Vs}),
+	    reply(From, {ID,vs_to_binary(Vs)}),
 	    St1
     catch
 	error:_:Stack ->
@@ -717,7 +718,7 @@ command_({call,{cylinder,[Ctm,Color,Arg]},From}, St) ->
 	    We = build(Fs, Vs, Ctm, Color),
 	    St1 = wings_obj:new(Name, We, St),
 	    {ID,_} = get_latest_id_(St1),
-	    reply(From, {ID,Vs}),
+	    reply(From, {ID,vs_to_binary(Vs)}),
 	    St1
     catch
 	error:_:Stack ->
@@ -732,7 +733,7 @@ command_({call,{sphere,[Ctm,Color,Arg]},From}, St) ->
 	    We = build(Fs, Vs, Ctm, Color),
 	    St1 = wings_obj:new(Name, We, St),
 	    {ID,_} = get_latest_id_(St1),
-	    reply(From, {ID,Vs}),
+	    reply(From, {ID,vs_to_binary(Vs)}),
 	    St1
     catch
 	error:_:Stack ->
@@ -756,9 +757,9 @@ command_({call,{set_color,[Color,Objs]},From}, St) ->
     end;
 command_({call,{transform,[List]},From}, St) ->
     try lists:foldl(
-	  fun(E={ID,Ctm,Vs,Color}, St1) ->
-		  io:format("transform: ~p~n", [E]),
-		  transform_vs(ID, Ctm, Color, Vs, St1)
+	  fun(_E={ID,Ctm,VsBin,Color}, St1) ->
+		  %% io:format("transform: ~p~n", [_E]),
+		  transform_vs(ID, Ctm, Color, VsBin, St1)
 	  end, St, List) of
 	St1 ->
 	    reply(From, ok),
@@ -806,6 +807,10 @@ command_({call,Call,From}, _St) ->
 command_(_, _St) ->
     next.
 
+vs_to_binary(Vs) ->
+    << <<X:32/float,Y:32/float,Z:32/float>> || {X,Y,Z} <- Vs >>.
+
+
 bool_command(Bool,Cmd,Objs,From,St) ->
     Sel = [{ID,gb_sets:singleton(0)} || ID <- Objs], %% select all objs
     St1 = wings_sel:set(body, Sel, St),              %% assign it
@@ -834,28 +839,32 @@ build(Fs, Vs, Ctm, Color) ->
     wings_va:set_body_color(rgb(Color), We1).
 
 %% set new (stored) Vs after transforming with matrix
-transform_vs(ID, Ctm, Color, Vs, St) when is_list(Vs) ->
+transform_vs(ID, Ctm, Color, VsBin, St) when is_binary(VsBin) ->
     ColorRGB = rgb(Color),
-    PosTup = list_to_tuple(Vs),
     wings_obj:update(
       fun(We) ->
-	      %% io:format("vp1: ~p~n", [We#we.vp]),
-	      We1 = transform_vs_1(We, Ctm, PosTup),
-	      %% io:format("vp2: ~p~n", [We1#we.vp]),
-	      We2 = wings_va:set_body_color(ColorRGB, We1),
-	      We2
+	      We1 = if Ctm =:= undefined ->
+			    We;
+		       true ->
+			    transform_vs_1(We, Ctm, VsBin)
+		    end,
+	      if ColorRGB =:= undefined ->
+		      We1;
+		 true ->
+		      wings_va:set_body_color(ColorRGB, We1)
+	      end
       end, [ID], St).
 
-
-transform_vs_1(We, Ctm, PosTup) ->
+transform_vs_1(We, Ctm, VsBin) ->
     Vtab = array:sparse_foldl(
 	     fun(V,_Pos,A) ->
 		     %% io:format("V = ~p\n,", [V]),
-		     Pos = element(V+1, PosTup),
+		     <<_:(12*V)/binary,
+		       X:32/float,Y:32/float,Z:32/float,_/binary>> = VsBin,
+		     Pos = {X,Y,Z},
 		     [{V,e3d_mat:mul_point(Ctm, Pos)}|A]
 	     end, [], We#we.vp),
     We#we{vp=array:from_orddict(lists:reverse(Vtab))}.
-
 
 %%
 %% Copied sphere creation from wings_shapes
@@ -897,5 +906,5 @@ circle(N, Y, R) ->
     Delta = math:pi()*2 / N,
     [{R*math:cos(I*Delta), Y, R*math:sin(I*Delta)} || I <- lists:seq(0, N-1)].
 
-
+rgb(undefined) -> undefined;
 rgb([R,G,B|_]) -> {R,G,B}.

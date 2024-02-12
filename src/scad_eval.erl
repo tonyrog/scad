@@ -1037,6 +1037,7 @@ bim_cylinder([H,R,R1,R2,Center,D,D1,D2|Dyn], Child, Scope) ->
 	   }.
 
 bim_sphere([R,D|Dyn], Child, Scope) ->
+    %% io:format("R=~p, D=~p, Dyn=~p\n", [R, D, Dyn]),
     Children = child(Child, Scope),
     DParams = get_dyn([{"$fa",'$fa'},{"$fs",'$fs'},{"$fn",'$fn'}], Dyn),
     R1 = if D == undef ->

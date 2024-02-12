@@ -14,8 +14,8 @@
 
 -define(is_value(X), (not is_tuple((X)))).
 
-%%-define(dbg(F,A), io:format(F,A)).
--define(dbg(F,A), ok).
+-define(dbg(F,A), io:format(F,A)).
+%%-define(dbg(F,A), ok).
 
 %% -define(is_value(X), 
 %%	(is_boolean(X)
