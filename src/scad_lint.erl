@@ -14,8 +14,8 @@
 
 -define(is_value(X), (not is_tuple((X)))).
 
--define(dbg(F,A), io:format(F,A)).
-%%-define(dbg(F,A), ok).
+%%-define(dbg(F,A), io:format(F,A)).
+-define(dbg(F,A), ok).
 
 %% -define(is_value(X), 
 %%	(is_boolean(X)
@@ -53,6 +53,12 @@ lint(Stmts, Opts) when is_list(Stmts), is_list(Opts) ->
     Stmts1 = [{file,Filename}|Stmts]++[eof],
     Stmt1 = input(Stmts1,[],[]) ++ get_defs(Opts),
     stmt_list(Stmt1, #{}).
+
+%% fixme: sort stmt_list 
+%%    variables    - keep last assignments
+%%    functions    - keep last version (and declare it)
+%%    modules      - keep last version (and declare it)
+%%    mcalls+block - keep order of calls
 
 input([{include,_Line,Filename}|Stmts],Acc,Fs) ->
     case input_file(Filename, Fs) of

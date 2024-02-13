@@ -643,7 +643,7 @@ rotate_ltm([Ax], undef)
     e3d_mat:rotate_from_euler_rad(RAv);
 rotate_ltm(A, [Vx,Vy,Vz]) when
       is_number(A), is_number(Vx), is_number(Vy), is_number(Vz) ->
-    e3d_mat:rotate(A, [float(Vx),float(Vy),float(Vz)]).
+    e3d_mat:rotate(A, {float(Vx),float(Vy),float(Vz)}).
    
 set_node_color(N=#node{wid=WID}, Color) when WID =:= -1 ->
     N#node { color=Color };
